@@ -1,0 +1,597 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using AllaganLib.GameSheets.Model;
+using AllaganLib.GameSheets.Sheets;
+using AllaganLib.GameSheets.Sheets.Rows;
+using CriticalCommonLib.Enums;
+
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Memory;
+using Dalamud.Plugin.Services;
+using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.UI.Info;
+using Lumina.Excel;
+using Lumina.Excel.Sheets;
+using Newtonsoft.Json;
+
+namespace CriticalCommonLib.Models
+{
+    public class Character
+    {
+        private readonly ExcelSheet<World> _worldSheet;
+        private readonly ClassJobSheet _classJobSheet;
+        private readonly ExcelSheet<TerritoryType> _territoryTypeSheet;
+        public HashSet<uint>? _achievements;
+        public ulong CharacterId;
+        public ulong FreeCompanyId;
+        public int HireOrder;
+        public int ItemCount;
+        public uint Gil;
+        public uint SellingCount;
+        public Byte CityId;
+        public Byte ClassJob;
+        public uint Level;
+        public uint RetainerTask;
+        public uint RetainerTaskComplete;
+        public string Name = "";
+        public uint GrandCompanyId;
+        private string? _freeCompanyName = "";
+        public string? AlternativeName = null;
+        public ulong OwnerId;
+
+        /// <summary>
+        /// The home world ID
+        /// </summary>
+        public uint WorldId;
+
+        /// <summary>
+        /// The active world ID(specifically for players)
+        /// </summary>
+        public uint ActiveWorldId;
+        public CharacterRace Race;
+        public CharacterSex Gender;
+        private HashSet<ulong>? _owners;
+        public ulong HouseId;
+        public sbyte WardId;
+        public sbyte PlotId;
+        public byte DivisionId;
+        public short RoomId;
+        public uint ZoneId;
+        public uint TerritoryTypeId;
+
+        public delegate Character Factory();
+
+        public Character(ExcelSheet<World> worldSheet, ClassJobSheet classJobSheet, ExcelSheet<TerritoryType> territoryTypeSheet)
+        {
+            _worldSheet = worldSheet;
+            _classJobSheet = classJobSheet;
+            _territoryTypeSheet = territoryTypeSheet;
+        }
+
+        public HashSet<ulong> Owners
+        {
+            get
+            {
+                if (_owners == null)
+                {
+                    _owners = new HashSet<ulong>();
+                }
+
+                return _owners;
+            }
+            set => _owners = value;
+        }
+
+        public HashSet<uint> Achievements
+        {
+            get
+            {
+                return _achievements ??= [];
+            }
+            set => _achievements = value;
+        }
+
+        [JsonIgnore]
+        public string FormattedName
+        {
+            get
+            {
+                if (CharacterType == CharacterType.Housing)
+                {
+                    return AlternativeName ?? HousingName;
+                }
+
+                if (Name.Trim().Length == 0)
+                {
+                    return AlternativeName ?? "Unknown";
+                }
+
+                return AlternativeName ?? Name;
+            }
+        }
+
+        [JsonIgnore]
+        public HousingZone HousingZone => (HousingZone)ZoneId;
+
+        public PlotSize GetPlotSize() => Plots.GetSize(HousingZone, DivisionId, PlotId, RoomId);
+
+        [JsonIgnore] public bool IsSubdivision => DivisionId == 2 || PlotId is >= 30 or -127;
+
+        [JsonIgnore]
+        public string HousingName
+        {
+            get
+            {
+                if (field == null)
+                {
+                    var strings = new List<string>();
+                    var ward = WardId + 1;
+                    if (ward == 0)
+                    {
+                        field = String.Empty;
+                    }
+                    else
+                    {
+
+                        var plot = PlotId;
+                        var room = RoomId;
+                        var division = DivisionId;
+
+                        var zoneName = Territory?.PlaceNameZone.ValueNullable?.Name.ExtractText() ?? "Unknown";
+
+                        strings.Add($"{zoneName} -");
+                        strings.Add($"Ward {ward}");
+                        if (division == 2 || plot is >= 30 or -127) strings.Add($"Subdivision");
+
+                        switch (plot)
+                        {
+                            case < -1:
+                                strings.Add($"Apartment {(room == 0 ? $"Lobby" : $"{room}")}");
+                                break;
+                            case > -1:
+                            {
+                                strings.Add($"Plot {plot + 1}");
+                                if (room > 0)
+                                {
+                                    strings.Add($"Room {room}");
+                                }
+
+                                break;
+                            }
+                        }
+
+
+                        field = string.Join(" ", strings);
+                    }
+                }
+
+                return field;
+            }
+        }
+
+        [JsonIgnore]
+        public string NameWithClass
+        {
+            get
+            {
+                if (ActualClassJob != null)
+                {
+                    return FormattedName + " (" + ActualClassJob.Base.Name.ExtractText() + ")";
+                }
+
+                return FormattedName;
+            }
+        }
+        [JsonIgnore]
+        public string NameWithClassAbv
+        {
+            get
+            {
+                if (ActualClassJob != null)
+                {
+                    return FormattedName + " (" + ActualClassJob.Base.Abbreviation.ExtractText() + ")";
+                }
+
+                return FormattedName;
+            }
+        }
+
+        private CharacterType? _characterType;
+        [JsonIgnore]
+        public CharacterType CharacterType
+        {
+            get
+            {
+                if (_characterType == null)
+                {
+                    var characterIdString = CharacterId.ToString();
+                    if (HouseId != 0)
+                    {
+                        _characterType = CharacterType.Housing;
+                    }
+                    else if (characterIdString.StartsWith("1"))
+                    {
+                        _characterType = CharacterType.Character;
+                    }
+                    else if (characterIdString.StartsWith("3"))
+                    {
+                        _characterType = CharacterType.Retainer;
+                    }
+                    else if (characterIdString.StartsWith("9"))
+                    {
+                        _characterType = CharacterType.FreeCompanyChest;
+                    }
+                    else
+                    {
+                        _characterType = CharacterType.Unknown;
+                    }
+                }
+
+                return _characterType.Value;
+            }
+        }
+
+        [JsonIgnore] public World? World => _worldSheet.GetRowOrDefault(WorldId);
+        [JsonIgnore] public World? ActiveWorld => _worldSheet.GetRowOrDefault(ActiveWorldId);
+
+        [JsonIgnore]
+        public ClassJobRow? ActualClassJob => _classJobSheet.GetRowOrDefault(ClassJob);
+
+        [JsonIgnore]
+        public TerritoryType? Territory => _territoryTypeSheet.GetRowOrDefault(TerritoryTypeId);
+
+        public string FreeCompanyName
+        {
+            get
+            {
+                if (_freeCompanyName == null)
+                {
+                    _freeCompanyName = "";
+                }
+                return _freeCompanyName;
+            }
+            set => _freeCompanyName = value;
+        }
+
+        public unsafe bool UpdateFromCurrentPlayer(IPlayerCharacter playerCharacter,
+            InfoProxyFreeCompany* freeCompanyInfoProxy, List<uint>? completedAchievementIds)
+        {
+            var hasChanges = false;
+            if (playerCharacter.Name.ToString() != Name)
+            {
+                Name = playerCharacter.Name.ToString();
+                hasChanges = true;
+            }
+
+            if (playerCharacter.Level != Level)
+            {
+                Level = playerCharacter.Level;
+                hasChanges = true;
+            }
+
+            if (playerCharacter.HomeWorld.RowId != 0)
+            {
+                if (playerCharacter.HomeWorld.RowId != WorldId)
+                {
+                    WorldId = playerCharacter.HomeWorld.RowId;
+                    hasChanges = true;
+                }
+            }
+            if (playerCharacter.CurrentWorld.RowId != 0)
+            {
+                if (playerCharacter.CurrentWorld.RowId != ActiveWorldId)
+                {
+                    ActiveWorldId = playerCharacter.CurrentWorld.RowId;
+                    hasChanges = true;
+                }
+            }
+
+            var characterRace = (CharacterRace)playerCharacter.Customize[(int)CustomizeIndex.Race];
+            if (Race != characterRace)
+            {
+                Race = characterRace;
+                hasChanges = true;
+            }
+
+            var characterGender = (CharacterSex)playerCharacter.Customize[(int)CustomizeIndex.Gender] == 0
+                ? CharacterSex.Male
+                : CharacterSex.Female;
+            if (Gender != characterGender)
+            {
+                Gender = characterGender;
+                hasChanges = true;
+            }
+
+            if (ClassJob != playerCharacter.ClassJob.RowId)
+            {
+                ClassJob = (byte)playerCharacter.ClassJob.RowId;
+                hasChanges = true;
+            }
+
+            if (freeCompanyInfoProxy != null)
+            {
+                var freeCompanyId = freeCompanyInfoProxy->Id;
+                var freeCompanyName = freeCompanyInfoProxy->NameString;
+                if (freeCompanyId != FreeCompanyId)
+                {
+                    FreeCompanyId = freeCompanyId;
+                    hasChanges = true;
+                }
+
+                if (freeCompanyName != FreeCompanyName)
+                {
+                    if (freeCompanyId == 0 && freeCompanyName == "" && FreeCompanyName != "")
+                    {
+                        FreeCompanyName = freeCompanyName;
+                        hasChanges = true;
+                    }
+                    else if (freeCompanyName != FreeCompanyName && freeCompanyId != 0 && freeCompanyName != "")
+                    {
+                        FreeCompanyName = freeCompanyName;
+                        hasChanges = true;
+                    }
+                }
+            }
+
+            if (completedAchievementIds != null)
+            {
+                if (completedAchievementIds.Count != Achievements.Count)
+                {
+                    Achievements = completedAchievementIds.ToHashSet();
+                    hasChanges = true;
+                }
+            }
+
+            return hasChanges;
+        }
+
+        public unsafe bool UpdateFromInfoProxyFreeCompany(InfoProxyFreeCompany* infoProxyFreeCompany)
+        {
+            if (infoProxyFreeCompany == null)
+            {
+                return false;
+            }
+
+            var hasChanges = false;
+            if (CharacterId != infoProxyFreeCompany->Id)
+            {
+                CharacterId = infoProxyFreeCompany->Id;
+                hasChanges = true;
+            }
+            var freeCompanyName = infoProxyFreeCompany->NameString.Trim();
+
+            if (freeCompanyName == "")
+            {
+                if (Name == "")
+                {
+                    freeCompanyName = "Unknown FC Name";
+                }
+                else
+                {
+                    freeCompanyName = Name;
+                }
+            }
+
+            if (Name != freeCompanyName)
+            {
+                Name = freeCompanyName;
+                hasChanges = true;
+            }
+
+
+            var grandCompany = (uint)infoProxyFreeCompany->GrandCompany;
+            if (GrandCompanyId != grandCompany)
+            {
+                GrandCompanyId = grandCompany;
+                hasChanges = true;
+            }
+
+            if (WorldId != infoProxyFreeCompany->HomeWorldId)
+            {
+                WorldId = infoProxyFreeCompany->HomeWorldId;
+                hasChanges = true;
+            }
+
+
+            return hasChanges;
+        }
+
+        public unsafe bool UpdateFromRetainerInformation(RetainerManager.Retainer retainerInformation, IPlayerCharacter currentCharacter, int hireOrder)
+        {
+            var hasChanges = false;
+            if (Gil != retainerInformation.Gil)
+            {
+                Gil = retainerInformation.Gil;
+                hasChanges = true;
+            }
+
+            if (HireOrder != hireOrder)
+            {
+                HireOrder = hireOrder;
+                hasChanges = true;
+            }
+            if (Level != retainerInformation.Level)
+            {
+                Level = retainerInformation.Level;
+                hasChanges = true;
+            }
+            if (CityId != (byte)retainerInformation.Town)
+            {
+                CityId = (byte)retainerInformation.Town;
+                hasChanges = true;
+            }
+            if (ClassJob != retainerInformation.ClassJob)
+            {
+                ClassJob = retainerInformation.ClassJob;
+                hasChanges = true;
+            }
+            if (ItemCount != retainerInformation.ItemCount)
+            {
+                ItemCount = retainerInformation.ItemCount;
+                hasChanges = true;
+            }
+            if (CharacterId != retainerInformation.RetainerId)
+            {
+                CharacterId = retainerInformation.RetainerId;
+                hasChanges = true;
+            }
+            var retainerName = retainerInformation.NameString.Trim();
+            if (Name != retainerName)
+            {
+                Name = retainerName;
+                hasChanges = true;
+            }
+            if (RetainerTask != retainerInformation.VentureId)
+            {
+                RetainerTask = retainerInformation.VentureId;
+                hasChanges = true;
+            }
+            if (SellingCount != retainerInformation.MarketItemCount)
+            {
+                SellingCount = retainerInformation.MarketItemCount;
+                hasChanges = true;
+            }
+            if (RetainerTaskComplete != retainerInformation.VentureComplete)
+            {
+                RetainerTaskComplete = retainerInformation.VentureComplete;
+                hasChanges = true;
+            }
+
+            if (WorldId != currentCharacter.HomeWorld.RowId)
+            {
+                WorldId = currentCharacter.HomeWorld.RowId;
+                hasChanges = true;
+            }
+
+            return hasChanges;
+        }
+
+        public unsafe bool UpdateFromCurrentHouse(HousingManager* housingManager,
+            IPlayerCharacter currentCharacter, ulong currentCharacterId, uint zoneId, uint territoryTypeId)
+        {
+            if (housingManager == null)
+            {
+                return false;
+            }
+
+            var divisionId = (byte)(housingManager->GetCurrentPlot() >= 30 ? 2 : housingManager->GetCurrentDivision());
+            var plotId = housingManager->GetCurrentPlot();
+            var roomId = housingManager->GetCurrentRoom();
+            var wardId = housingManager->GetCurrentWard();
+            var worldId = currentCharacter.HomeWorld.RowId;
+            byte sb1 = (byte)wardId;
+            byte sb2 = (byte)plotId;
+            ushort sh1 = (ushort)roomId;
+            ushort sh2 = (ushort)worldId;
+            ushort sh3 = (ushort)zoneId;
+            var houseId = ((ulong)sb1 << 56) | ((ulong)sb2 << 48) | ((ulong)sh1 << 32) | ((ulong)sh2 << 16) | sh3;
+
+            var hasChanges = false;
+
+            if (divisionId != DivisionId)
+            {
+                DivisionId = divisionId;
+                hasChanges = true;
+            }
+
+            if (plotId != PlotId)
+            {
+                PlotId = plotId;
+                hasChanges = true;
+            }
+
+            if (roomId != RoomId)
+            {
+                RoomId = roomId;
+                hasChanges = true;
+            }
+
+            if (wardId != WardId)
+            {
+                WardId = wardId;
+                hasChanges = true;
+            }
+
+            if (worldId != WorldId)
+            {
+                WorldId = worldId;
+                hasChanges = true;
+            }
+
+            if (houseId != HouseId)
+            {
+                HouseId = houseId;
+                hasChanges = true;
+            }
+
+            if (zoneId != ZoneId)
+            {
+                ZoneId = zoneId;
+                hasChanges = true;
+            }
+
+            if (territoryTypeId != TerritoryTypeId)
+            {
+                TerritoryTypeId = territoryTypeId;
+                hasChanges = true;
+            }
+
+            Owners.Add(currentCharacterId);
+
+            return hasChanges;
+        }
+
+        [JsonIgnore]
+        public int Icon
+        {
+            get
+            {
+                switch (CharacterType)
+                {
+                    case CharacterType.Character:
+                    case CharacterType.Retainer:
+                        return ActualClassJob?.Icon ?? 0;
+                    case CharacterType.Housing:
+                        switch (GetPlotSize())
+                        {
+                            case PlotSize.Cottage:
+                                return 60751;
+                            case PlotSize.House:
+                                return 60752;
+                            case PlotSize.Mansion:
+                                return 60753;
+                            case PlotSize.Apartment:
+                                return 60789;
+                            case PlotSize.Room:
+                                return 60771;
+                        }
+
+                        break;
+                    case CharacterType.FreeCompanyChest:
+                        return 52478;
+                }
+
+                return 0;
+            }
+        }
+
+        public bool IsAchievementCompleted(uint achievementId)
+        {
+            return Achievements.Contains(achievementId);
+        }
+    }
+
+    public enum CharacterType
+    {
+        Character,
+        Retainer,
+        FreeCompanyChest,
+        Housing,
+        Unknown,
+        Orphaned
+    }
+}

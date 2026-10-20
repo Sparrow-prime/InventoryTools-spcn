@@ -8,6 +8,33 @@ Instead the changelog reader and automation surrounding plugin PRs will add the 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.html).
 
+## [2.15.0.13] - 2026-10-21
+
+国服个人修复版，基于上游 15.0.13。`CriticalCommonLib` 已从子模块改为随本仓库一起保存，修复代码直接入库。
+
+### 现象
+- Dalamud 15 下启动即报两条 `Hook verification failed`：`Client::UI::Agent::AgentItemDetail.OnItemHovered`（返回类型与 5 个参数类型不符）和 `Client::UI::AddonItemDetail.GenerateItemTooltip`（返回 `void*` 应为 `void`）。
+- 同时报 `Failed to find Text signature "_containerInfoNetworkHook"`，雇员、部队箱子、房屋容器内容不刷新，插件核心功能不可用。
+- 国服 Dalamud 15.0.3.8 附带的新版 Lumina 已移除 `Lumina.Text.SeString`，源码无法编译。
+
+### 根因
+- 两个 hook 的委托是手写的近似签名，与游戏实际签名不一致，Dalamud 15 新增的 hook 校验因此拒绝挂载。
+- 容器信息 hook 的字节特征对应国服客户端已重构的分发代码，整段特征零命中，签名无法再解析（Dalamud 15 也不再提供 `ProcessZonePacketDown` 用于重新定位）。
+- `Lumina.Text.SeString` 在新版 Lumina 中被 `Lumina.Text.ReadOnly.ReadOnlySeString` 取代。
+
+### 处置
+- 两个 hook 改用 FFXIVClientStructs 自带的委托类型（`AgentItemDetail.Delegates.OnItemHovered`、`AddonItemDetail.Delegates.GenerateItemTooltip`），detour 按真实签名重写，不再手写签名。
+- 移除失效的容器信息 hook，改为读取 `InventoryContainer.IsLoaded`（客户端在容器内容到达时置位）判断背包可用，并在 `OnActiveRetainerLoaded` 上做兜底标记与重扫触发。
+- 调试打印改用 `ReadOnlySeString.ExtractText()`。
+
+### 构建与产物
+- `dotnet build InventoryTools/InventoryTools.csproj -c Release`，基准为 `%APPDATA%\XIVLauncherCN\addon\Hooks\dev` 下的 Dalamud 15.0.3.8。
+- 产物输出到 `E:\Code\Output\InventoryTools-spcn\`，Release 附件为 `latest.zip`。
+
+### 测试
+- 编译 0 错误；产物反查确认旧签名串与 `ContainerInfoDetour` 均已消失，新逻辑已编入。
+- 游戏内实测：雇员背包 1–2 秒内正常进入插件，部队箱子/房屋容器可读，日志不再出现上述警告。
+
 ## [15.0.13] - 2026-09-13
 
 ### Changed
