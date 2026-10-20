@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.h
 - 编译 0 错误；产物反查确认旧签名串与 `ContainerInfoDetour` 均已消失，新逻辑已编入。
 - 游戏内实测：雇员背包 1–2 秒内正常进入插件，部队箱子/房屋容器可读，日志不再出现上述警告。
 
+### 发布
+- 提交：`11bf6cc`
+- tag：`2.15.0.13`
+- Release：`https://github.com/Sparrow-prime/InventoryTools-spcn/releases/tag/2.15.0.13`
+- 附件：`latest.zip`，SHA256 `CDEB692A8E0CC6E0527D9740659489F3488D099291AFE638E59389C952654BD6`
+- 推送方式：`main` 分支与 tag 直推（凭据从本机 token 文件读取，不落库）
+
 ## [15.0.13] - 2026-09-13
 
 ### Changed
