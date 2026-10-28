@@ -44,7 +44,7 @@ public class ChangelogWindow : GenericWindow, IMenuWindow
                         if (currentGroup != null)
                             ImGui.Separator();
 
-                        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), $"1.{minorGroup}.x");
+                        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), $"{minorGroup}.x");
                         currentGroup = minorGroup;
                     }
 
@@ -52,7 +52,7 @@ public class ChangelogWindow : GenericWindow, IMenuWindow
 
                     using var color = ImRaii.PushColor(ImGuiCol.Text, new Vector4(1f, 0.8f, 0.3f, 1f), isSelected);
 
-                    if (ImGui.Selectable("  1." + changelog, isSelected))
+                    if (ImGui.Selectable("  " + changelog, isSelected))
                     {
                         scrollTo = changelog;
                     }
@@ -69,7 +69,7 @@ public class ChangelogWindow : GenericWindow, IMenuWindow
                 bool currentVersionSet = false;
                 foreach (var changelog in _changelogService.ChangeLogs)
                 {
-                    if (ImGui.CollapsingHeader("1." + changelog.Item1.ToString(), ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.NoTreePushOnOpen))
+                    if (ImGui.CollapsingHeader(changelog.Item1.ToString(), ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.NoTreePushOnOpen))
                     {
                         if (ImGui.IsItemVisible() && !currentVersionSet)
                         {

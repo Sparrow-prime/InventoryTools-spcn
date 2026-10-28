@@ -2,45 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
-The log versioning the plugin versioning will not match as 1.0.0.0 technically does not match semantic versioning but the headache of trying to change this would be too much.
-Instead the changelog reader and automation surrounding plugin PRs will add the 1. back in
+> 国服客制分支：版本号严格跟随上游，使用与上游一致的三段式 `x.y.z`，不单独递增。
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.html).
 
-## [2.15.0.13] - 2026-10-21
+## [15.0.13] - 2026-10-29
 
-国服个人修复版，基于上游 15.0.13。`CriticalCommonLib` 已从子模块改为随本仓库一起保存，修复代码直接入库。
+国服客制分支国服支持版，基于上游 15.0.13，版本号严格跟随上游。本节合并 2026-10-21 的 `2.15.0.13` 国服修复与 2026-10-29 的版本号对齐；`CriticalCommonLib` 已从子模块改为随本仓库一起保存，修复代码直接入库。
 
 ### 现象
 - Dalamud 15 下启动即报两条 `Hook verification failed`：`Client::UI::Agent::AgentItemDetail.OnItemHovered`（返回类型与 5 个参数类型不符）和 `Client::UI::AddonItemDetail.GenerateItemTooltip`（返回 `void*` 应为 `void`）。
 - 同时报 `Failed to find Text signature "_containerInfoNetworkHook"`，雇员、部队箱子、房屋容器内容不刷新，插件核心功能不可用。
 - 国服 Dalamud 15.0.3.8 附带的新版 Lumina 已移除 `Lumina.Text.SeString`，源码无法编译。
+- 打开 Allagan Tools 设置窗口报 `Error executing OpenGenericWindowMessage ...`，`ChangelogService` 构造失败：`The provided version string is invalid`。
+- 插件外显版本为 `2.15.0.13`，与上游 `15.0.13` 不一致。
 
 ### 根因
 - 两个 hook 的委托是手写的近似签名，与游戏实际签名不一致，Dalamud 15 新增的 hook 校验因此拒绝挂载。
 - 容器信息 hook 的字节特征对应国服客户端已重构的分发代码，整段特征零命中，签名无法再解析（Dalamud 15 也不再提供 `ProcessZonePacketDown` 用于重新定位）。
 - `Lumina.Text.SeString` 在新版 Lumina 中被 `Lumina.Text.ReadOnly.ReadOnlySeString` 取代。
+- `CHANGELOG.md` 的 `## [2.15.0.13] - 2026-10-21` 是四段版本，不符合 SemVer；`Ionide.KeepAChangelog` 内部 `SemVersion.Parse` 直接抛 `ArgumentException`，`ChangelogService` 未捕获，导致 `IMenuWindow[]` 解析失败、设置窗口打不开。
+- 客制分支此前自行把版本号递增为 `2.15.0.13`，偏离了上游版本线。
 
 ### 处置
 - 两个 hook 改用 FFXIVClientStructs 自带的委托类型（`AgentItemDetail.Delegates.OnItemHovered`、`AddonItemDetail.Delegates.GenerateItemTooltip`），detour 按真实签名重写，不再手写签名。
 - 移除失效的容器信息 hook，改为读取 `InventoryContainer.IsLoaded`（客户端在容器内容到达时置位）判断背包可用，并在 `OnActiveRetainerLoaded` 上做兜底标记与重扫触发。
 - 调试打印改用 `ReadOnlySeString.ExtractText()`。
+- 版本号对齐上游 `15.0.13`：`InventoryTools.csproj`、插件清单 `InventoryTools.json`、`CHANGELOG.md`。
+- `CHANGELOG.md` 标题改为 `## [15.0.13]`；`ChangelogWindow` 去掉硬编码的 `"1."` 前缀，界面直接显示 `15.0.13`。
+- 在 `README.md`、`CHANGELOG.md`、`InventoryTools.csproj`、插件清单 `Description` 标记「客制分支国服支持版，版本严格跟随上游，不单独递增」。
+- .NET 程序集版本固定四位，DLL 元数据为 `15.0.13.0`，外部显示以清单 `15.0.13` 为准。
 
 ### 构建与产物
-- `dotnet build InventoryTools/InventoryTools.csproj -c Release`，基准为 `%APPDATA%\XIVLauncherCN\addon\Hooks\dev` 下的 Dalamud 15.0.3.8。
-- 产物输出到 `E:\Code\Output\InventoryTools-spcn\`，Release 附件为 `latest.zip`。
+- `dotnet publish InventoryTools/InventoryTools.csproj -c Release -o E:\Code\Work\.output\InventoryTools-spcn`（`DALAMUD_HOME=%APPDATA%\XIVLauncherCN\addon\Hooks\dev`）。
+- Release 附件沿用 `latest.zip`，SHA256 `7169B526DA8180856B3D0130B921D94CDEA88FF116DEE89422CA79E36984116B`。
 
 ### 测试
-- 编译 0 错误；产物反查确认旧签名串与 `ContainerInfoDetour` 均已消失，新逻辑已编入。
-- 游戏内实测：雇员背包 1–2 秒内正常进入插件，部队箱子/房屋容器可读，日志不再出现上述警告。
+- 编译 0 错误；用插件同款 `Ionide.KeepAChangelog` + `SemanticVersion` 解析验证 `IsOk=True`、148 个 release。
+- 运行清单 `AssemblyVersion=15.0.13`，DLL `AssemblyVersion/FileVersion=15.0.13.0`；设置窗口解析错误不再复现。
 
-### 发布
-- 提交：`11bf6cc`
-- tag：`2.15.0.13`
-- Release：`https://github.com/Sparrow-prime/InventoryTools-spcn/releases/tag/2.15.0.13`
-- 附件：`latest.zip`，SHA256 `CDEB692A8E0CC6E0527D9740659489F3488D099291AFE638E59389C952654BD6`
-- 推送方式：`main` 分支与 tag 直推（凭据从本机 token 文件读取，不落库）
+### 版本号
+- `15.0.13`（严格跟随上游，不单独递增；上一版 `2.15.0.13` 的 tag/提交仍保留在仓库历史中）。
 
 ## [15.0.13] - 2026-09-13
 
