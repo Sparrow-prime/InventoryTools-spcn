@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.h
 ### 版本号
 - `15.0.13`（严格跟随上游，不单独递增；上一版 `2.15.0.13` 的 tag/提交仍保留在仓库历史中）。
 
+### 发布
+- 提交：`b556aa3`
+- tag：`15.0.13`
+- Release：`https://github.com/Sparrow-prime/InventoryTools-spcn/releases/tag/15.0.13`
+- 附件：`latest.zip`，SHA256 `7169B526DA8180856B3D0130B921D94CDEA88FF116DEE89422CA79E36984116B`
+- 推送方式：`main` 分支与 tag 直推（凭据从本机 token 文件读取，不落库）
+
 ## [15.0.13] - 2026-09-13
 
 ### Changed
